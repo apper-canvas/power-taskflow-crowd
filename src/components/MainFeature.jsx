@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'react-toastify'
 import { format, isToday, isPast, addDays } from 'date-fns'
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
+
 import ApperIcon from './ApperIcon'
 
 const MainFeature = () => {
@@ -11,13 +13,16 @@ const MainFeature = () => {
     description: '',
     dueDate: '',
     priority: 'medium',
-    category: 'personal'
+    category: 'personal',
+    status: 'todo'
+
   })
   const [filter, setFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
   const [viewMode, setViewMode] = useState('list')
+
 
   const categories = [
     { id: 'personal', name: 'Personal', color: 'bg-blue-500', icon: 'User' },
@@ -33,6 +38,13 @@ const MainFeature = () => {
     { value: 'high', label: 'High', color: 'text-red-600', bg: 'bg-red-100 dark:bg-red-900/30' }
   ]
 
+  const taskStatuses = [
+    { value: 'todo', label: 'To Do', color: 'bg-surface-100 dark:bg-surface-700' },
+    { value: 'inprogress', label: 'In Progress', color: 'bg-blue-100 dark:bg-blue-900/30' },
+    { value: 'done', label: 'Done', color: 'bg-green-100 dark:bg-green-900/30' }
+  ]
+
+
   // Load tasks from localStorage on component mount
   useEffect(() => {
     const savedTasks = localStorage.getItem('taskflow-tasks')
@@ -47,8 +59,8 @@ const MainFeature = () => {
           description: 'Finish the quarterly project proposal for client review',
           dueDate: format(new Date(), 'yyyy-MM-dd'),
           priority: 'high',
-          category: 'work',
-          status: 'pending',
+          status: 'inprogress',
+
           createdAt: new Date().toISOString()
         },
         {
@@ -58,8 +70,8 @@ const MainFeature = () => {
           dueDate: format(addDays(new Date(), 1), 'yyyy-MM-dd'),
           priority: 'medium',
           category: 'health',
-          status: 'completed',
-          createdAt: new Date().toISOString()
+          status: 'done',
+
         }
       ]
       setTasks(sampleTasks)
@@ -91,14 +103,15 @@ const MainFeature = () => {
       const task = {
         id: Date.now().toString(),
         ...newTask,
-        status: 'pending',
-        createdAt: new Date().toISOString()
+        status: 'todo',
+
       }
       setTasks([task, ...tasks])
       toast.success('Task created successfully!')
     }
 
-    setNewTask({ title: '', description: '', dueDate: '', priority: 'medium', category: 'personal' })
+    setNewTask({ title: '', description: '', dueDate: '', priority: 'medium', category: 'personal', status: 'todo' })
+
     setShowForm(false)
   }
 
@@ -109,7 +122,9 @@ const MainFeature = () => {
       dueDate: task.dueDate,
       priority: task.priority,
       category: task.category
-    })
+      category: task.category,
+      status: task.status
+
     setEditingTask(task)
     setShowForm(true)
   }
@@ -120,16 +135,39 @@ const MainFeature = () => {
   }
 
   const toggleTaskStatus = (taskId) => {
+    const task = tasks.find(t => t.id === taskId)
+    let newStatus
+    
+    if (task.status === 'todo') newStatus = 'inprogress'
+    else if (task.status === 'inprogress') newStatus = 'done'
+    else newStatus = 'todo'
+    
+    setTasks(tasks.map(t => 
+      t.id === taskId 
+        ? { ...t, status: newStatus, updatedAt: new Date().toISOString() }
+        : t
+    ))
+    
+    const statusLabels = { todo: 'To Do', inprogress: 'In Progress', done: 'Done' }
+    toast.success(`Task moved to ${statusLabels[newStatus]}!`)
+  }
+
+  const handleDragEnd = (result) => {
+    if (!result.destination) return
+
+    const { draggableId, destination } = result
+    const newStatus = destination.droppableId
+    
     setTasks(tasks.map(task => 
-      task.id === taskId 
-        ? { 
-            ...task, 
-            status: task.status === 'completed' ? 'pending' : 'completed',
-            updatedAt: new Date().toISOString()
-          }
+      task.id === draggableId 
+        ? { ...task, status: newStatus, updatedAt: new Date().toISOString() }
         : task
     ))
+    
+    const statusLabels = { todo: 'To Do', inprogress: 'In Progress', done: 'Done' }
+    toast.success(`Task moved to ${statusLabels[newStatus]}!`)
   }
+
 
   const getFilteredTasks = () => {
     let filtered = tasks
@@ -137,18 +175,19 @@ const MainFeature = () => {
     if (filter !== 'all') {
       filtered = filtered.filter(task => {
         switch (filter) {
+        switch (filter) {
           case 'completed':
-            return task.status === 'completed'
+            return task.status === 'done'
           case 'pending':
-            return task.status === 'pending'
+            return task.status === 'todo' || task.status === 'inprogress'
           case 'today':
             return task.dueDate === format(new Date(), 'yyyy-MM-dd')
           case 'overdue':
-            return isPast(new Date(task.dueDate)) && task.status !== 'completed'
+            return isPast(new Date(task.dueDate)) && task.status !== 'done'
           default:
             return filtered.filter(task => task.category === filter)
         }
-      })
+
     }
 
     if (searchTerm) {
@@ -160,20 +199,21 @@ const MainFeature = () => {
 
     return filtered.sort((a, b) => {
       if (a.status !== b.status) {
-        return a.status === 'completed' ? 1 : -1
+        const statusOrder = { todo: 0, inprogress: 1, done: 2 }
+        return statusOrder[a.status] - statusOrder[b.status]
       }
       const priorityOrder = { high: 3, medium: 2, low: 1 }
       return priorityOrder[b.priority] - priorityOrder[a.priority]
     })
+
   }
 
   const getTaskStats = () => {
     const total = tasks.length
-    const completed = tasks.filter(task => task.status === 'completed').length
-    const pending = tasks.filter(task => task.status === 'pending').length
-    const overdue = tasks.filter(task => isPast(new Date(task.dueDate)) && task.status !== 'completed').length
-    
-    return { total, completed, pending, overdue }
+    const completed = tasks.filter(task => task.status === 'done').length
+    const pending = tasks.filter(task => task.status === 'todo' || task.status === 'inprogress').length
+    const overdue = tasks.filter(task => isPast(new Date(task.dueDate)) && task.status !== 'done').length
+
   }
 
   const stats = getTaskStats()
@@ -241,20 +281,21 @@ const MainFeature = () => {
               </motion.button>
 
               <div className="flex bg-surface-100 dark:bg-surface-700 rounded-xl p-1">
-                {['list', 'grid'].map((mode) => (
+                {['list', 'grid', 'kanban'].map((mode) => (
                   <button
                     key={mode}
                     onClick={() => setViewMode(mode)}
-                    className={`px-3 md:px-4 py-2 rounded-lg text-sm md:text-base font-medium transition-all duration-200 ${
+                    className={`px-3 md:px-4 py-2 rounded-lg text-sm md:text-base font-medium transition-all duration-200 capitalize ${
                       viewMode === mode
                         ? 'bg-white dark:bg-surface-600 text-primary-600 dark:text-primary-400 shadow-card'
                         : 'text-surface-600 dark:text-surface-400 hover:text-surface-900 dark:hover:text-surface-200'
                     }`}
                   >
-                    <ApperIcon name={mode === 'list' ? 'List' : 'Grid3X3'} className="w-4 h-4 md:w-5 md:h-5" />
+                    <ApperIcon name={mode === 'list' ? 'List' : mode === 'grid' ? 'Grid3X3' : 'Columns'} className="w-4 h-4 md:w-5 md:h-5" />
                   </button>
                 ))}
               </div>
+
             </div>
 
             {/* Search and Filter */}
@@ -367,6 +408,21 @@ const MainFeature = () => {
                       ))}
                     </select>
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-2">
+                      Status
+                    </label>
+                    <select
+                      value={newTask.status}
+                      onChange={(e) => setNewTask({ ...newTask, status: e.target.value })}
+                      className="w-full px-4 py-3 bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                    >
+                      {taskStatuses.map(status => (
+                        <option key={status.value} value={status.value}>{status.label}</option>
+                      ))}
+                    </select>
+
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-3 mt-6">
@@ -383,7 +439,8 @@ const MainFeature = () => {
                     onClick={() => {
                       setShowForm(false)
                       setEditingTask(null)
-                      setNewTask({ title: '', description: '', dueDate: '', priority: 'medium', category: 'personal' })
+                      setNewTask({ title: '', description: '', dueDate: '', priority: 'medium', category: 'personal', status: 'todo' })
+
                     }}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
@@ -397,109 +454,264 @@ const MainFeature = () => {
           </AnimatePresence>
 
           {/* Tasks Display */}
-          <div className={`${viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6' : 'space-y-3 md:space-y-4'}`}>
-            <AnimatePresence mode="popLayout">
-              {filteredTasks.map((task, index) => {
-                const category = categories.find(cat => cat.id === task.category)
-                const priority = priorities.find(p => p.value === task.priority)
-                const isOverdue = isPast(new Date(task.dueDate)) && task.status !== 'completed'
-                const isDueToday = isToday(new Date(task.dueDate))
-
-                return (
-                  <motion.div
-                    key={task.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                    transition={{ duration: 0.3, delay: index * 0.05 }}
-                    className={`group p-4 md:p-6 rounded-2xl border transition-all duration-300 hover:shadow-card ${
-                      task.status === 'completed'
-                        ? 'bg-surface-50 dark:bg-surface-700/50 border-surface-200 dark:border-surface-600 opacity-75'
-                        : isOverdue
-                        ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                        : isDueToday
-                        ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
-                        : 'bg-white dark:bg-surface-800 border-surface-200 dark:border-surface-700 hover:border-primary-300 dark:hover:border-primary-600'
-                    }`}
-                  >
-                    <div className="flex items-start space-x-3 md:space-x-4">
-                      <motion.button
-                        onClick={() => toggleTaskStatus(task.id)}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        className={`flex-shrink-0 w-5 h-5 md:w-6 md:h-6 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${
-                          task.status === 'completed'
-                            ? 'bg-green-500 border-green-500'
-                            : 'border-surface-300 dark:border-surface-600 hover:border-primary-500'
-                        }`}
-                      >
-                        {task.status === 'completed' && (
-                          <ApperIcon name="Check" className="w-3 h-3 md:w-4 md:h-4 text-white" />
-                        )}
-                      </motion.button>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2 mb-2">
-                          <h3 className={`font-semibold text-sm md:text-base ${
-                            task.status === 'completed' 
-                              ? 'line-through text-surface-500 dark:text-surface-400' 
-                              : 'text-surface-900 dark:text-surface-100'
-                          }`}>
-                            {task.title}
-                          </h3>
-                          <div className={`px-2 py-1 rounded-full text-xs font-medium ${priority.bg} ${priority.color}`}>
-                            {priority.label}
-                          </div>
-                        </div>
-
-                        {task.description && (
-                          <p className="text-sm text-surface-600 dark:text-surface-400 mb-3 line-clamp-2">
-                            {task.description}
-                          </p>
-                        )}
-
-                        <div className="flex flex-wrap items-center gap-2 md:gap-3 text-xs md:text-sm">
-                          <div className="flex items-center space-x-1">
-                            <div className={`w-2 h-2 rounded-full ${category.color}`}></div>
-                            <span className="text-surface-600 dark:text-surface-400">{category.name}</span>
-                          </div>
-                          
-                          {task.dueDate && (
-                            <div className={`flex items-center space-x-1 ${
-                              isOverdue ? 'text-red-600 dark:text-red-400' :
-                              isDueToday ? 'text-yellow-600 dark:text-yellow-400' :
-                              'text-surface-600 dark:text-surface-400'
-                            }`}>
-                              <ApperIcon name="Calendar" className="w-3 h-3 md:w-4 md:h-4" />
-                              <span>{format(new Date(task.dueDate), 'MMM dd')}</span>
-                            </div>
-                          )}
-                        </div>
+          {/* Tasks Display */}
+          {viewMode === 'kanban' ? (
+            <DragDropContext onDragEnd={handleDragEnd}>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+                {taskStatuses.map(status => {
+                  const statusTasks = filteredTasks.filter(task => task.status === status.value)
+                  
+                  return (
+                    <div key={status.value} className="flex flex-col">
+                      <div className="flex items-center justify-between mb-4 p-3 bg-surface-50 dark:bg-surface-700 rounded-xl">
+                        <h3 className="font-semibold text-surface-900 dark:text-surface-100">{status.label}</h3>
+                        <span className="text-sm text-surface-500 dark:text-surface-400 bg-surface-200 dark:bg-surface-600 px-2 py-1 rounded-full">
+                          {statusTasks.length}
+                        </span>
                       </div>
+                      
+                      <Droppable droppableId={status.value}>
+                        {(provided, snapshot) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.droppableProps}
+                            className={`flex-1 space-y-3 p-2 rounded-xl transition-all duration-200 min-h-[200px] ${
+                              snapshot.isDraggingOver ? 'bg-primary-50 dark:bg-primary-900/20 border-2 border-dashed border-primary-300 dark:border-primary-600' : 'bg-transparent'
+                            }`}
+                          >
+                            {statusTasks.map((task, index) => {
+                              const category = categories.find(cat => cat.id === task.category)
+                              const priority = priorities.find(p => p.value === task.priority)
+                              const isOverdue = isPast(new Date(task.dueDate)) && task.status !== 'done'
+                              const isDueToday = isToday(new Date(task.dueDate))
 
-                      <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        <motion.button
-                          onClick={() => handleEdit(task)}
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          className="p-1 md:p-2 text-surface-600 dark:text-surface-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors duration-200"
-                        >
-                          <ApperIcon name="Edit" className="w-3 h-3 md:w-4 md:h-4" />
-                        </motion.button>
-                        <motion.button
-                          onClick={() => handleDelete(task.id)}
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          className="p-1 md:p-2 text-surface-600 dark:text-surface-400 hover:text-red-600 dark:hover:text-red-400 transition-colors duration-200"
-                        >
-                          <ApperIcon name="Trash2" className="w-3 h-3 md:w-4 md:h-4" />
-                        </motion.button>
-                      </div>
+                              return (
+                                <Draggable key={task.id} draggableId={task.id} index={index}>
+                                  {(provided, snapshot) => (
+                                    <motion.div
+                                      ref={provided.innerRef}
+                                      {...provided.draggableProps}
+                                      {...provided.dragHandleProps}
+                                      initial={{ opacity: 0, y: 20 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      transition={{ duration: 0.3, delay: index * 0.05 }}
+                                      className={`group p-4 rounded-xl border transition-all duration-300 hover:shadow-card cursor-pointer ${
+                                        snapshot.isDragging ? 'shadow-xl rotate-3 scale-105' : ''
+                                      } ${
+                                        task.status === 'done'
+                                          ? 'bg-surface-50 dark:bg-surface-700/50 border-surface-200 dark:border-surface-600 opacity-75'
+                                          : isOverdue
+                                          ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                                          : isDueToday
+                                          ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+                                          : 'bg-white dark:bg-surface-800 border-surface-200 dark:border-surface-700 hover:border-primary-300 dark:hover:border-primary-600'
+                                      }`}
+                                    >
+                                      <div className="flex items-start space-x-3">
+                                        <motion.button
+                                          onClick={() => toggleTaskStatus(task.id)}
+                                          whileHover={{ scale: 1.1 }}
+                                          whileTap={{ scale: 0.9 }}
+                                          className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${
+                                            task.status === 'done'
+                                              ? 'bg-green-500 border-green-500'
+                                              : task.status === 'inprogress'
+                                              ? 'bg-blue-500 border-blue-500'
+                                              : 'border-surface-300 dark:border-surface-600 hover:border-primary-500'
+                                          }`}
+                                        >
+                                          {task.status === 'done' && (
+                                            <ApperIcon name="Check" className="w-3 h-3 text-white" />
+                                          )}
+                                          {task.status === 'inprogress' && (
+                                            <ApperIcon name="Clock" className="w-3 h-3 text-white" />
+                                          )}
+                                        </motion.button>
+
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                                            <h3 className={`font-semibold text-sm ${
+                                              task.status === 'done' 
+                                                ? 'line-through text-surface-500 dark:text-surface-400' 
+                                                : 'text-surface-900 dark:text-surface-100'
+                                            }`}>
+                                              {task.title}
+                                            </h3>
+                                            <div className={`px-2 py-1 rounded-full text-xs font-medium ${priority.bg} ${priority.color}`}>
+                                              {priority.label}
+                                            </div>
+                                          </div>
+
+                                          {task.description && (
+                                            <p className="text-sm text-surface-600 dark:text-surface-400 mb-3 line-clamp-2">
+                                              {task.description}
+                                            </p>
+                                          )}
+
+                                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                                            <div className="flex items-center space-x-1">
+                                              <div className={`w-2 h-2 rounded-full ${category.color}`}></div>
+                                              <span className="text-surface-600 dark:text-surface-400">{category.name}</span>
+                                            </div>
+                                            
+                                            {task.dueDate && (
+                                              <div className={`flex items-center space-x-1 ${
+                                                isOverdue ? 'text-red-600 dark:text-red-400' :
+                                                isDueToday ? 'text-yellow-600 dark:text-yellow-400' :
+                                                'text-surface-600 dark:text-surface-400'
+                                              }`}>
+                                                <ApperIcon name="Calendar" className="w-3 h-3" />
+                                                <span>{format(new Date(task.dueDate), 'MMM dd')}</span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                          <motion.button
+                                            onClick={() => handleEdit(task)}
+                                            whileHover={{ scale: 1.1 }}
+                                            whileTap={{ scale: 0.9 }}
+                                            className="p-1 text-surface-600 dark:text-surface-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors duration-200"
+                                          >
+                                            <ApperIcon name="Edit" className="w-3 h-3" />
+                                          </motion.button>
+                                          <motion.button
+                                            onClick={() => handleDelete(task.id)}
+                                            whileHover={{ scale: 1.1 }}
+                                            whileTap={{ scale: 0.9 }}
+                                            className="p-1 text-surface-600 dark:text-surface-400 hover:text-red-600 dark:hover:text-red-400 transition-colors duration-200"
+                                          >
+                                            <ApperIcon name="Trash2" className="w-3 h-3" />
+                                          </motion.button>
+                                        </div>
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </Draggable>
+                              )
+                            })}
+                            {provided.placeholder}
+                          </div>
+                        )}
+                      </Droppable>
                     </div>
-                  </motion.div>
-                )
-              })}
-            </AnimatePresence>
+                  )
+                })}
+              </div>
+            </DragDropContext>
+          ) : (
+            <div className={`${viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6' : 'space-y-3 md:space-y-4'}`}>
+              <AnimatePresence mode="popLayout">
+                {filteredTasks.map((task, index) => {
+                  const category = categories.find(cat => cat.id === task.category)
+                  const priority = priorities.find(p => p.value === task.priority)
+                  const isOverdue = isPast(new Date(task.dueDate)) && task.status !== 'done'
+                  const isDueToday = isToday(new Date(task.dueDate))
+
+                  return (
+                    <motion.div
+                      key={task.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                      transition={{ duration: 0.3, delay: index * 0.05 }}
+                      className={`group p-4 md:p-6 rounded-2xl border transition-all duration-300 hover:shadow-card ${
+                        task.status === 'done'
+                          ? 'bg-surface-50 dark:bg-surface-700/50 border-surface-200 dark:border-surface-600 opacity-75'
+                          : isOverdue
+                          ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                          : isDueToday
+                          ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+                          : 'bg-white dark:bg-surface-800 border-surface-200 dark:border-surface-700 hover:border-primary-300 dark:hover:border-primary-600'
+                      }`}
+                    >
+                      <div className="flex items-start space-x-3 md:space-x-4">
+                        <motion.button
+                          onClick={() => toggleTaskStatus(task.id)}
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          className={`flex-shrink-0 w-5 h-5 md:w-6 md:h-6 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${
+                            task.status === 'done'
+                              ? 'bg-green-500 border-green-500'
+                              : task.status === 'inprogress'
+                              ? 'bg-blue-500 border-blue-500'
+                              : 'border-surface-300 dark:border-surface-600 hover:border-primary-500'
+                          }`}
+                        >
+                          {task.status === 'done' && (
+                            <ApperIcon name="Check" className="w-3 h-3 md:w-4 md:h-4 text-white" />
+                          )}
+                          {task.status === 'inprogress' && (
+                            <ApperIcon name="Clock" className="w-3 h-3 md:w-4 md:h-4 text-white" />
+                          )}
+                        </motion.button>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <h3 className={`font-semibold text-sm md:text-base ${
+                              task.status === 'done' 
+                                ? 'line-through text-surface-500 dark:text-surface-400' 
+                                : 'text-surface-900 dark:text-surface-100'
+                            }`}>
+                              {task.title}
+                            </h3>
+                            <div className={`px-2 py-1 rounded-full text-xs font-medium ${priority.bg} ${priority.color}`}>
+                              {priority.label}
+                            </div>
+                          </div>
+
+                          {task.description && (
+                            <p className="text-sm text-surface-600 dark:text-surface-400 mb-3 line-clamp-2">
+                              {task.description}
+                            </p>
+                          )}
+
+                          <div className="flex flex-wrap items-center gap-2 md:gap-3 text-xs md:text-sm">
+                            <div className="flex items-center space-x-1">
+                              <div className={`w-2 h-2 rounded-full ${category.color}`}></div>
+                              <span className="text-surface-600 dark:text-surface-400">{category.name}</span>
+                            </div>
+                            
+                            {task.dueDate && (
+                              <div className={`flex items-center space-x-1 ${
+                                isOverdue ? 'text-red-600 dark:text-red-400' :
+                                isDueToday ? 'text-yellow-600 dark:text-yellow-400' :
+                                'text-surface-600 dark:text-surface-400'
+                              }`}>
+                                <ApperIcon name="Calendar" className="w-3 h-3 md:w-4 md:h-4" />
+                                <span>{format(new Date(task.dueDate), 'MMM dd')}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                          <motion.button
+                            onClick={() => handleEdit(task)}
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            className="p-1 md:p-2 text-surface-600 dark:text-surface-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors duration-200"
+                          >
+                            <ApperIcon name="Edit" className="w-3 h-3 md:w-4 md:h-4" />
+                          </motion.button>
+                          <motion.button
+                            onClick={() => handleDelete(task.id)}
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            className="p-1 md:p-2 text-surface-600 dark:text-surface-400 hover:text-red-600 dark:hover:text-red-400 transition-colors duration-200"
+                          >
+                            <ApperIcon name="Trash2" className="w-3 h-3 md:w-4 md:h-4" />
+                          </motion.button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )
+                })}
+              </AnimatePresence>
+            </div>
+          )}
+
           </div>
 
           {filteredTasks.length === 0 && (
