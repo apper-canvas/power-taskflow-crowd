@@ -15,6 +15,7 @@ const MainFeature = () => {
     priority: 'medium',
     category: 'personal',
     status: 'todo'
+  })
 
   })
   const [filter, setFilter] = useState('all')
@@ -121,9 +122,9 @@ const MainFeature = () => {
       description: task.description,
       dueDate: task.dueDate,
       priority: task.priority,
-      category: task.category
       category: task.category,
       status: task.status
+    })
 
     setEditingTask(task)
     setShowForm(true)
@@ -174,8 +175,6 @@ const MainFeature = () => {
 
     if (filter !== 'all') {
       filtered = filtered.filter(task => {
-        switch (filter) {
-        switch (filter) {
           case 'completed':
             return task.status === 'done'
           case 'pending':
@@ -185,8 +184,10 @@ const MainFeature = () => {
           case 'overdue':
             return isPast(new Date(task.dueDate)) && task.status !== 'done'
           default:
-            return filtered.filter(task => task.category === filter)
+            return task.category === filter
         }
+      })
+    }
 
     }
 
@@ -213,8 +214,9 @@ const MainFeature = () => {
     const completed = tasks.filter(task => task.status === 'done').length
     const pending = tasks.filter(task => task.status === 'todo' || task.status === 'inprogress').length
     const overdue = tasks.filter(task => isPast(new Date(task.dueDate)) && task.status !== 'done').length
-
+    return { total, completed, pending, overdue }
   }
+
 
   const stats = getTaskStats()
   const filteredTasks = getFilteredTasks()
@@ -712,7 +714,6 @@ const MainFeature = () => {
             </div>
           )}
 
-          </div>
 
           {filteredTasks.length === 0 && (
             <motion.div
